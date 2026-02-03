@@ -497,3 +497,197 @@ def test_make_llm_completion_api_selection():
         on_token=None,
     )
     mock_llm.completion.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests without mocks to ensure actual code paths are covered
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_llm_messages_real_events():
+    """Test prepare_llm_messages with real events (no mocks)."""
+    # Create real events
+    events = [
+        MessageEvent(
+            source="user",
+            llm_message=Message(
+                role="user",
+                content=[TextContent(text="Hello")],
+            ),
+        ),
+        MessageEvent(
+            source="agent",
+            llm_message=Message(
+                role="assistant",
+                content=[TextContent(text="Hi there!")],
+            ),
+        ),
+    ]
+
+    # Call function without mocks
+    result = prepare_llm_messages(events)
+
+    # Verify results
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0].role == "user"
+    assert result[1].role == "assistant"
+
+
+def test_prepare_llm_messages_real_events_with_additional_messages():
+    """Test prepare_llm_messages with real events and additional messages."""
+    events = [
+        MessageEvent(
+            source="user",
+            llm_message=Message(
+                role="user",
+                content=[TextContent(text="Hello")],
+            ),
+        ),
+    ]
+
+    additional = [
+        Message(
+            role="user",
+            content=[TextContent(text="Follow-up question")],
+        )
+    ]
+
+    result = prepare_llm_messages(events, additional_messages=additional)
+
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0].role == "user"
+    assert result[1].role == "user"
+
+
+def test_prepare_llm_messages_real_condenser_returns_view():
+    """Test prepare_llm_messages with a real condenser that returns a View."""
+    events = [
+        MessageEvent(
+            source="user",
+            llm_message=Message(
+                role="user",
+                content=[TextContent(text="Hello")],
+            ),
+        ),
+    ]
+
+    # Create a mock condenser that returns a View
+    mock_condenser = Mock(spec=CondenserBase)
+    condensed_view = View.from_events(events)
+    mock_condenser.condense.return_value = condensed_view
+
+    result = prepare_llm_messages(events, condenser=mock_condenser)
+
+    assert isinstance(result, list)
+    mock_condenser.condense.assert_called_once()
+
+
+def test_prepare_llm_messages_real_condenser_returns_condensation():
+    """Test prepare_llm_messages with a condenser that returns a Condensation."""
+    events = [
+        MessageEvent(
+            source="user",
+            llm_message=Message(
+                role="user",
+                content=[TextContent(text="Hello")],
+            ),
+        ),
+    ]
+
+    # Create a mock condenser that returns a Condensation
+    mock_condenser = Mock(spec=CondenserBase)
+    condensation = Condensation(
+        summary="Condensed summary",
+        llm_response_id="test-id",
+    )
+    mock_condenser.condense.return_value = condensation
+
+    result = prepare_llm_messages(events, condenser=mock_condenser)
+
+    assert isinstance(result, Condensation)
+    assert result.summary == "Condensed summary"
+
+
+def test_prepare_llm_messages_with_llm_parameter():
+    """Test prepare_llm_messages passes llm to condenser."""
+    events = [
+        MessageEvent(
+            source="user",
+            llm_message=Message(
+                role="user",
+                content=[TextContent(text="Hello")],
+            ),
+        ),
+    ]
+
+    mock_condenser = Mock(spec=CondenserBase)
+    mock_condenser.condense.return_value = View.from_events(events)
+
+    mock_llm = Mock(spec=LLM)
+
+    prepare_llm_messages(events, condenser=mock_condenser, llm=mock_llm)
+
+    # Verify llm was passed to condenser
+    mock_condenser.condense.assert_called_once()
+    call_kwargs = mock_condenser.condense.call_args[1]
+    assert call_kwargs["agent_llm"] == mock_llm
+
+
+def test_make_llm_completion_with_on_token_callback():
+    """Test make_llm_completion with on_token callback."""
+    mock_llm = Mock(spec=LLM)
+    mock_llm.uses_responses_api.return_value = False
+    mock_response = Mock(spec=LLMResponse)
+    mock_llm.completion.return_value = mock_response
+
+    messages = [
+        Message(
+            role="user",
+            content=[TextContent(text="Hello")],
+        )
+    ]
+
+    def token_callback(token):
+        pass
+
+    result = make_llm_completion(mock_llm, messages, on_token=token_callback)
+
+    assert result == mock_response
+    mock_llm.completion.assert_called_once_with(
+        messages=messages,
+        tools=[],
+        add_security_risk_prediction=True,
+        on_token=token_callback,
+    )
+
+
+def test_make_llm_completion_responses_api_with_on_token():
+    """Test make_llm_completion with responses API and on_token callback."""
+    mock_llm = Mock(spec=LLM)
+    mock_llm.uses_responses_api.return_value = True
+    mock_response = Mock(spec=LLMResponse)
+    mock_llm.responses.return_value = mock_response
+
+    messages = [
+        Message(
+            role="user",
+            content=[TextContent(text="Hello")],
+        )
+    ]
+
+    def token_callback(token):
+        pass
+
+    result = make_llm_completion(mock_llm, messages, on_token=token_callback)
+
+    assert result == mock_response
+    mock_llm.responses.assert_called_once_with(
+        messages=messages,
+        tools=[],
+        include=None,
+        store=False,
+        add_security_risk_prediction=True,
+        on_token=token_callback,
+    )

@@ -280,3 +280,164 @@ def test_whitespace_in_json_strings():
 
     assert action.items == ["a", "b", "c"]
     assert action.config == {"x": 1, "y": 2}
+
+
+def test_non_dict_input_returns_unchanged():
+    """Test that non-dict input is returned unchanged."""
+    # Test with None
+    result = fix_malformed_tool_arguments(None, JsonDecodingTestAction)
+    assert result is None
+
+    # Test with string
+    result = fix_malformed_tool_arguments("not a dict", JsonDecodingTestAction)
+    assert result == "not a dict"
+
+    # Test with list
+    result = fix_malformed_tool_arguments(["a", "b"], JsonDecodingTestAction)
+    assert result == ["a", "b"]
+
+    # Test with integer
+    result = fix_malformed_tool_arguments(42, JsonDecodingTestAction)
+    assert result == 42
+
+
+class JsonDecodingUnionAction(Action):
+    """Test action with Union types containing list/dict."""
+
+    data: list[str] | dict[str, int] = Field(description="Union of list or dict")
+    optional_list: list[int] | None = Field(default=None, description="Optional list")
+
+
+def test_union_type_with_list():
+    """Test that Union types with list are properly handled."""
+    data = {
+        "data": '["a", "b", "c"]',
+    }
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingUnionAction)
+    action = JsonDecodingUnionAction.model_validate(fixed_data)
+
+    assert action.data == ["a", "b", "c"]
+
+
+def test_union_type_with_dict():
+    """Test that Union types with dict are properly handled."""
+    data = {
+        "data": '{"x": 1, "y": 2}',
+    }
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingUnionAction)
+    action = JsonDecodingUnionAction.model_validate(fixed_data)
+
+    assert action.data == {"x": 1, "y": 2}
+
+
+def test_union_type_with_native_values():
+    """Test that Union types work with native values."""
+    # Native list
+    data = {"data": ["native", "list"]}
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingUnionAction)
+    action = JsonDecodingUnionAction.model_validate(fixed_data)
+    assert action.data == ["native", "list"]
+
+    # Native dict
+    data = {"data": {"native": 42}}
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingUnionAction)
+    action = JsonDecodingUnionAction.model_validate(fixed_data)
+    assert action.data == {"native": 42}
+
+
+class JsonDecodingPipeUnionAction(Action):
+    """Test action with pipe Union syntax (Python 3.10+)."""
+
+    items: list[str] | dict[str, int] | None = Field(
+        default=None, description="Pipe union type"
+    )
+
+
+def test_pipe_union_syntax():
+    """Test that pipe union syntax (list | dict | None) is properly handled."""
+    # Test with JSON string list
+    data = {"items": '["x", "y"]'}
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingPipeUnionAction)
+    action = JsonDecodingPipeUnionAction.model_validate(fixed_data)
+    assert action.items == ["x", "y"]
+
+    # Test with JSON string dict
+    data = {"items": '{"a": 1}'}
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingPipeUnionAction)
+    action = JsonDecodingPipeUnionAction.model_validate(fixed_data)
+    assert action.items == {"a": 1}
+
+
+class JsonDecodingMissingFieldAction(Action):
+    """Test action for testing missing fields."""
+
+    required_list: list[str] = Field(description="Required list")
+    optional_field: str | None = Field(default=None, description="Optional field")
+
+
+def test_missing_field_in_arguments():
+    """Test that missing fields are handled gracefully."""
+    # Only provide required field, optional field is missing
+    data = {"required_list": '["a", "b"]'}
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingMissingFieldAction)
+    action = JsonDecodingMissingFieldAction.model_validate(fixed_data)
+
+    assert action.required_list == ["a", "b"]
+    assert action.optional_field is None
+
+
+def test_json_string_parsing_non_collection():
+    """Test that JSON strings that parse to non-collection types are not replaced."""
+    # JSON string that parses to a string (not list/dict)
+    data = {
+        "items": '"just a string"',  # Valid JSON but parses to string
+        "config": "{}",
+        "name": "test",
+    }
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingTestAction)
+
+    # The items field should still be the original string since parsed value is not list/dict
+    assert fixed_data["items"] == '"just a string"'
+    assert fixed_data["config"] == {}
+
+
+def test_json_string_parsing_number():
+    """Test that JSON strings that parse to numbers are not replaced."""
+    data = {
+        "items": "42",  # Valid JSON but parses to int
+        "config": "{}",
+        "name": "test",
+    }
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingTestAction)
+
+    # The items field should still be the original string since parsed value is not list/dict
+    assert fixed_data["items"] == "42"
+    assert fixed_data["config"] == {}
+
+
+def test_json_string_parsing_boolean():
+    """Test that JSON strings that parse to booleans are not replaced."""
+    data = {
+        "items": "true",  # Valid JSON but parses to bool
+        "config": "{}",
+        "name": "test",
+    }
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingTestAction)
+
+    # The items field should still be the original string since parsed value is not list/dict
+    assert fixed_data["items"] == "true"
+    assert fixed_data["config"] == {}
+
+
+def test_json_string_parsing_null():
+    """Test that JSON strings that parse to null are not replaced."""
+    data = {
+        "items": "null",  # Valid JSON but parses to None
+        "config": "{}",
+        "name": "test",
+    }
+    fixed_data = fix_malformed_tool_arguments(data, JsonDecodingTestAction)
+
+    # The items field should still be the original string since parsed value is not list/dict
+    assert fixed_data["items"] == "null"
+    assert fixed_data["config"] == {}

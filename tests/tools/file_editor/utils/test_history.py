@@ -142,3 +142,36 @@ def test_pop_last_history_removes_entry():
         # Try to pop last history when there are no entries
         last_entry = manager.pop_last_history(path)
         assert last_entry is None
+
+
+def test_pop_last_history_with_missing_cache_entry(caplog):
+    """Test that pop_last_history handles missing cache entries gracefully."""
+    import logging
+
+    with tempfile.NamedTemporaryFile() as temp_file:
+        path = Path(temp_file.name)
+        manager = FileHistoryManager()
+
+        # Add a history entry
+        manager.add_history(path, "content1")
+
+        # Get the metadata to find the history key
+        metadata = manager.get_metadata(path)
+        assert len(metadata["entries"]) == 1
+        last_counter = metadata["entries"][-1]
+
+        # Manually delete the history content from the cache (but keep metadata)
+        history_key = manager._get_history_key(path, last_counter)
+        manager.cache.delete(history_key)
+
+        # Now pop_last_history should return None and log a warning
+        with caplog.at_level(logging.WARNING):
+            last_entry = manager.pop_last_history(path)
+
+        # Verify the result is None
+        assert last_entry is None
+
+        # Verify the warning was logged
+        assert any(
+            "History entry not found" in record.message for record in caplog.records
+        )
